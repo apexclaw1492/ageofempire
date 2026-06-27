@@ -31,6 +31,63 @@ export class HUD {
 
     this.$('end-replay').onclick = () => this.cb.onReplay();
     window.addEventListener('keydown', e => { if (e.key === 'h' || e.key === 'H') this._toggleHelp(); });
+    this._buildOnboarding();
+  }
+
+  _buildOnboarding() {
+    const app = document.getElementById('app');
+    // Welcome modal
+    const w = document.createElement('div'); w.id = 'welcome'; w.className = 'hidden';
+    w.innerHTML = `
+      <div class="welcome-card">
+        <div class="welcome-title">AGE OF EMPIRE</div>
+        <div class="welcome-sub">Build an empire. Raise an army. Raze the enemy keep.</div>
+        <div class="welcome-cols">
+          <div class="welcome-col">
+            <div class="wc-h">🎯 Objective</div>
+            <p>Gather <b>wood, food &amp; gold</b>, grow your town, train an army, advance through the Ages, and <b>destroy the enemy Town Center</b> before they destroy yours.</p>
+          </div>
+          <div class="welcome-col" id="welcome-controls"></div>
+        </div>
+        <button id="welcome-start">▶ Play</button>
+      </div>`;
+    app.appendChild(w);
+    this.welcome = w;
+    w.querySelector('#welcome-start').onclick = () => { w.classList.add('hidden'); if (this.cb.onStart) this.cb.onStart(); };
+
+    // Objectives tracker
+    const o = document.createElement('div'); o.id = 'objectives'; o.className = 'hud hidden';
+    o.innerHTML = `<div class="obj-title">Objectives</div><div class="obj-list"></div>`;
+    app.appendChild(o);
+    this.objectivesEl = o; this.objListEl = o.querySelector('.obj-list');
+  }
+
+  showWelcome(isTouch) {
+    const ctrls = this.welcome.querySelector('#welcome-controls');
+    ctrls.innerHTML = isTouch ? `
+      <div class="wc-h">📱 Touch controls</div>
+      <ul>
+        <li><b>Tap</b> a unit/building to select</li>
+        <li><b>Tap</b> ground/enemy/tree to move · gather · attack</li>
+        <li><b>Drag</b> one finger to pan</li>
+        <li><b>Pinch</b> to zoom · <b>twist</b> two fingers to rotate</li>
+        <li><b>⛶</b> button toggles box-select</li>
+      </ul>` : `
+      <div class="wc-h">🖱️ Controls</div>
+      <ul>
+        <li><b>Left-click</b> select · <b>drag</b> box-select</li>
+        <li><b>Right-click</b> move · gather · attack</li>
+        <li><b>WASD</b> / edge pan · <b>wheel</b> zoom · <b>MMB</b> rotate</li>
+        <li>Build &amp; train from the panel (bottom-left)</li>
+      </ul>`;
+    this.welcome.classList.remove('hidden');
+  }
+
+  setObjectives(list) {
+    this.objectivesEl.classList.remove('hidden');
+    this.objListEl.innerHTML = list.map(o =>
+      `<div class="obj ${o.done ? 'done' : ''} ${o.active ? 'active' : ''}"><span class="obj-box">${o.done ? '✓' : ''}</span>${o.text}</div>`
+    ).join('');
   }
 
   showGame() {

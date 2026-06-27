@@ -135,3 +135,82 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0c10; }
 /* Cursor states */
 #game-canvas.cmd-attack { cursor: crosshair; }
 #game-canvas.cmd-build  { cursor: copy; }
+
+/* ---- Welcome / onboarding ---- */
+#welcome {
+  position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 30%, rgba(20,28,40,0.78), rgba(6,9,14,0.92));
+  backdrop-filter: blur(6px); padding: 16px;
+}
+.welcome-card {
+  max-width: 660px; width: 100%; background: var(--panel); border: 1px solid var(--panel-edge);
+  border-radius: 18px; padding: 30px 34px; box-shadow: 0 18px 60px rgba(0,0,0,0.6); text-align: center;
+}
+.welcome-title { font-size: 40px; font-weight: 800; letter-spacing: 8px; color: var(--gold); text-shadow: 0 2px 26px rgba(232,200,121,0.35); }
+.welcome-sub { color: var(--muted); margin: 8px 0 22px; font-size: 15px; }
+.welcome-cols { display: flex; gap: 18px; text-align: left; }
+.welcome-col { flex: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--panel-edge); border-radius: 12px; padding: 14px 16px; }
+.wc-h { font-weight: 700; color: var(--gold); margin-bottom: 8px; font-size: 14px; }
+.welcome-col p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text); }
+.welcome-col ul { margin: 0; padding-left: 16px; font-size: 13px; line-height: 1.7; color: var(--text); }
+.welcome-col b { color: #fff; }
+#welcome-start {
+  margin-top: 24px; background: var(--gold); color: #1a1206; border: none; padding: 13px 40px;
+  border-radius: 11px; font-size: 17px; font-weight: 800; cursor: pointer; transition: .15s; letter-spacing: 1px;
+}
+#welcome-start:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+/* ---- Objectives tracker ---- */
+#objectives {
+  left: 12px; top: 56px; width: 230px;
+  background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 10px;
+  padding: 9px 11px; box-shadow: 0 4px 18px rgba(0,0,0,0.4);
+}
+.obj-title { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; font-weight: 700; }
+.obj { font-size: 12.5px; color: var(--muted); padding: 3px 0; display: flex; align-items: center; gap: 7px; transition: .2s; }
+.obj-box { width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--panel-edge); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; color: #7ce6a0; flex: 0 0 15px; }
+.obj.active { color: var(--text); }
+.obj.active .obj-box { border-color: var(--gold); box-shadow: 0 0 8px rgba(232,200,121,0.4); }
+.obj.done { color: #6fbf86; text-decoration: line-through; opacity: 0.75; }
+.obj.done .obj-box { background: rgba(124,230,160,0.18); border-color: #6fbf86; }
+
+/* ---- Marquee (box-select) toggle for touch ---- */
+#marquee-btn {
+  position: absolute; z-index: 16; right: 12px; bottom: 244px;
+  width: 52px; height: 52px; border-radius: 14px; font-size: 24px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--panel-edge);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.5); cursor: pointer; touch-action: none;
+}
+#marquee-btn.on { background: var(--gold); color: #1a1206; border-color: var(--gold); }
+
+/* ---- Touch / small-screen reflow ---- */
+#app.touch #help-hint { display: none !important; }
+
+@media (max-width: 860px), (pointer: coarse) {
+  #resource-bar { gap: 2px; padding: 6px 6px; border-radius: 0 0 10px 10px; top: 0; }
+  .res { min-width: 0; padding: 3px 7px; font-size: 13px; gap: 4px; }
+  .res .ico { width: 15px; height: 15px; }
+  .res.clock { display: none; }
+  .res.age { min-width: 70px; font-size: 12px; }
+
+  #minimap-wrap { right: 8px; bottom: 8px; padding: 5px; }
+  #minimap { width: 150px; height: 150px; }
+
+  #command-panel { left: 8px; right: 8px; bottom: 8px; width: auto; padding: 9px; }
+  #sel-portrait { width: 46px; height: 46px; flex-basis: 46px; font-size: 24px; }
+  #action-grid { grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .act-btn { font-size: 10px; border-radius: 10px; }
+  .act-btn .ai { font-size: 22px; }
+  .act-btn .cap { font-size: 8px; }
+
+  #toast { font-size: 13px; padding: 8px 16px; top: 56px; }
+  #help-hint { display: none; }
+}
+
+/* Phone portrait: action grid wraps, minimap smaller */
+@media (max-width: 560px) {
+  #minimap { width: 116px; height: 116px; }
+  #marquee-btn { bottom: 200px; width: 46px; height: 46px; }
+  #action-grid { grid-template-columns: repeat(5, 1fr); }
+  .res.age { display: none; }
+}

@@ -12,6 +12,9 @@ import { Building, makeGhost } from '../entities/buildings.js';
 import { Grid } from './pathfind.js';
 import { EnemyAI } from './ai.js';
 import { HUD } from '../ui/hud.js';
+import { assets } from '../engine/assets.js';
+import { Particles } from '../engine/particles.js';
+import { createComposer } from '../engine/postfx.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3();
@@ -42,6 +45,8 @@ export class Game {
   // ---------------------------------------------------------------- bootstrap
   async build(hud) {
     this.hud = hud;
+    // Heavy phase: stream in the 3D models (≈70% of the loading bar).
+    await assets.loadAll((p, label) => hud.setLoadingProgress(p * 0.7, 'Loading models… ' + label));
     const steps = [
       ['Raising the land…', () => { this.terrain = new Terrain(MAP.seed); this.scene.add(this.terrain.mesh); }],
       ['Planting forests & veins…', () => { this.resField = new ResourceField(this.terrain, this.rng); this.scene.add(this.resField.group); }],
@@ -52,15 +57,56 @@ export class Game {
       ['Binding controls…', () => { this._initInput(); this._initMinimap(); }],
     ];
     for (let i = 0; i < steps.length; i++) {
-      hud.setLoadingProgress(i / steps.length, steps[i][0]);
+      hud.setLoadingProgress(0.7 + 0.3 * (i / steps.length), steps[i][0]);
       steps[i][1]();
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 40));
     }
     hud.setLoadingProgress(1, 'Ready');
     hud.hideLoading();
     hud.showGame();
-    hud.toast('Build your economy. Destroy the enemy Town Center.');
+    this._initObjectives();
+    hud.showWelcome(this.isMobile);
+    this.paused = true;            // hold until the player presses Play
     this._refreshHUD();
+  }
+
+  onStart() {
+    this.paused = false;
+    this.hud.toast('Gather resources and build your empire!');
+  }
+
+  _initObjectives() {
+    this.objectives = [
+      { id: 'gather', text: 'Gather wood & food', done: false },
+      { id: 'house', text: 'Build a House', done: false },
+      { id: 'army', text: 'Build a Barracks & train a soldier', done: false },
+      { id: 'feudal', text: 'Advance to the Feudal Age', done: false },
+      { id: 'win', text: 'Destroy the enemy Town Center', done: false },
+    ];
+    this.objTimer = 0;
+    this._pushObjectives();
+  }
+
+  _updateObjectives(dt) {
+    this.objTimer -= dt;
+    if (this.objTimer > 0) return;
+    this.objTimer = 1.0;
+    const o = this.objectives; if (!o) return;
+    const has = (fn) => this.buildings.some(b => b.team === TEAM.PLAYER && !b.dead && fn(b));
+    const r = this.resources[TEAM.PLAYER];
+    let changed = false;
+    const set = (id, v) => { const it = o.find(x => x.id === id); if (it && it.done !== v) { it.done = v; changed = true; } };
+    set('gather', r.wood >= 300 || r.food >= 280);
+    set('house', has(b => b.key === 'house' && b.complete));
+    set('army', this.units.some(u => u.team === TEAM.PLAYER && !u.dead && u.kind !== 'villager'));
+    set('feudal', this.age[TEAM.PLAYER] >= 1);
+    if (changed) this._pushObjectives();
+  }
+
+  _pushObjectives() {
+    const o = this.objectives;
+    const firstOpen = o.find(x => !x.done);
+    this.hud.setObjectives(o.map(x => ({ text: x.text, done: x.done, active: x === firstOpen })));
   }
 
   // ---------------------------------------------------------------- renderer
@@ -82,12 +128,12 @@ export class Game {
     const sky = makeSky();
     scene.background = sky;
     scene.environment = sky;
-    scene.fog = new THREE.Fog(0xcfd9dc, 90, 240);
+    scene.fog = new THREE.Fog(0xdbe4e0, 120, 300);
     this.scene = scene;
 
-    // sun
-    const sun = new THREE.DirectionalLight(0xfff2d8, 2.4);
-    sun.position.set(60, 90, 40);
+    // warm golden-hour key light with long soft shadows
+    const sun = new THREE.DirectionalLight(0xffeac2, 3.0);
+    sun.position.set(60, 78, 40);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const d = 130;
@@ -99,10 +145,14 @@ export class Game {
     scene.add(sun); scene.add(sun.target);
     this.sun = sun;
 
-    const hemi = new THREE.HemisphereLight(0xbcd6ff, 0x4a4030, 0.7);
+    const hemi = new THREE.HemisphereLight(0xb8d4ff, 0x6b5a3e, 0.95);
     scene.add(hemi);
-    const fill = new THREE.AmbientLight(0xffffff, 0.18);
+    const fill = new THREE.AmbientLight(0xffffff, 0.22);
     scene.add(fill);
+    // subtle cool rim/back light for depth
+    const rim = new THREE.DirectionalLight(0x9db8e0, 0.5);
+    rim.position.set(-50, 40, -60);
+    scene.add(rim);
 
     // camera
     this.camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.5, 1000);
@@ -123,6 +173,20 @@ export class Game {
     // move marker pool
     this.marker = this._makeMarker();
     scene.add(this.marker);
+
+    this.particles = new Particles(scene);
+
+    // post-processing (lighter on touch / small screens)
+    this.isMobile = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 760;
+    try {
+      const fx = createComposer(this.renderer, scene, this.camera, { quality: this.isMobile ? 'low' : 'high' });
+      this.composer = fx.composer; this.bloom = fx.bloom;
+    } catch (e) { console.warn('postfx unavailable, falling back to direct render', e); this.composer = null; }
+  }
+
+  _spawnDust(x, z, count = 12, life = 0.8, color = 0xcdbb99) {
+    const y = this.terrain ? this.terrain.heightAt(x, z) + 0.3 : 0.3;
+    this.particles.burst(x, y, z, { count, color, life, size: 0.7, speed: 2.2, up: 1.6, spread: 1.2 });
   }
 
   _makeMarker() {
@@ -365,7 +429,7 @@ export class Game {
     if (!this.canAfford(TEAM.PLAYER, BUILDING_DEFS[key].cost)) { this._flashCost(BUILDING_DEFS[key].cost); return; }
     this.exitBuildMode();
     this.buildMode = key;
-    this.ghost = makeGhost(key, this.terrain);
+    this.ghost = makeGhost(key, TEAM.PLAYER, this.terrain);
     this.scene.add(this.ghost);
     this.canvas.classList.add('cmd-build');
     this._refreshHUD();
@@ -410,10 +474,12 @@ export class Game {
   update(dt) {
     if (this.over) { this._render(); return; }
     dt = Math.min(dt, 0.05);
+    if (this.paused) { this._handleCameraKeys(dt); this.particles.update(dt); this._render(); return; }
     this.timeNow += dt;
 
     this._handleCameraKeys(dt);
     this.ai.update(dt);
+    this._updateObjectives(dt);
 
     // training & construction & tower fire
     for (const b of this.buildings) {
@@ -426,6 +492,7 @@ export class Game {
     this._stepUnits(dt);
     this._stepProjectiles(dt);
     this._stepCorpses(dt);
+    this.particles.update(dt);
 
     // fog
     this.fog.beginFrame();
@@ -454,7 +521,8 @@ export class Game {
   _render() {
     this.sun.target.position.copy(this.camTarget);
     this.sun.position.set(this.camTarget.x + 60, 90, this.camTarget.z + 40);
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   // ---------------------------------------------------------------- unit sim
@@ -527,7 +595,11 @@ export class Game {
     const node = u.gatherNode;
     if (!node || !node.alive) { u.state = 'returning'; return this._startReturn(u); }
     u.gatherTick = (u.gatherTick || 0) + dt;
-    if (u.gatherTick > 0.5) { u.gatherTick = 0; u.triggerSwing(); }
+    if (u.gatherTick > 0.5) {
+      u.gatherTick = 0; u.triggerSwing();
+      const cc = node.type === 'wood' ? 0x8a5a2b : node.type === 'gold' ? 0xf2c84b : 0xb9d36a;
+      this.particles.burst(node.pos.x, node.pos.y + 0.6, node.pos.z, { count: 5, color: cc, speed: 1.8, up: 1.4, size: 0.22, life: 0.5, grav: -7, spread: 0.8 });
+    }
     const got = this.resField.harvest(node, GATHER_RATE * dt);
     u.carry.type = node.type; u.carry.amount += got;
     u.faceTo(node.pos.x, node.pos.z);
@@ -588,6 +660,7 @@ export class Game {
     u.faceTo(b.pos.x, b.pos.z);
     if (done) {
       this.grid.setBlockedCircle(b.pos.x, b.pos.z, b.footprint + 0.2);
+      this._spawnDust(b.pos.x, b.pos.z, 20, 1.0);
       if (u.team === TEAM.PLAYER) this.hud.toast(`${b.def.name} complete.`);
       u.state = 'idle'; u.buildTarget = null;
       if (u.kind === 'villager') this._autoGather(u);
@@ -671,6 +744,8 @@ export class Game {
     if (target.maxHp !== undefined && target.def && target.def.kind) {
       // unit
       target.hp -= dmg;
+      this.particles.burst(target.pos.x, target.pos.y + 1.1, target.pos.z,
+        { count: 6, color: 0xb22222, speed: 2.4, up: 1.6, size: 0.28, life: 0.45, grav: -6, spread: 1 });
       if (target.hp <= 0) this._killUnit(target);
     } else if (target.key !== undefined) {
       // building
@@ -694,8 +769,9 @@ export class Game {
   _destroyBuilding(b) {
     b.dead = true;
     this.grid.setBlockedCircle(b.pos.x, b.pos.z, b.footprint + 0.2, 0);
-    // small debris flash: scale down
-    b._fade = 1.0;
+    if (b.showDestroyed) b.showDestroyed();
+    b._fade = 2.2; // linger as rubble, then sink
+    this._spawnDust(b.pos.x, b.pos.z, 18, 2.2);
     if (this.selectedBuilding === b) { this.selectedBuilding = null; }
     if (b.team === TEAM.ENEMY && b.key === 'towncenter') this.hud.toast('Enemy Town Center destroyed!');
   }
@@ -766,12 +842,11 @@ export class Game {
       return true;
     });
     this.units = this.units.filter(u => !(u.dead && u.deadTimer <= 0));
-    // remove dead buildings after fade
+    // dead buildings linger as rubble, then sink into the ground and vanish
     for (const b of this.buildings) {
       if (b.dead && b._fade !== undefined) {
-        b._fade -= 0.03;
-        b.mesh.scale.setScalar(Math.max(0.001, b._fade));
-        b.mesh.position.y -= 0.05;
+        b._fade -= 0.016;
+        if (b._fade < 0.7) { b.mesh.position.y -= 0.04; }
         if (b._fade <= 0) { this.scene.remove(b.mesh); b._removed = true; }
       }
     }
@@ -798,6 +873,7 @@ export class Game {
   _end(win) {
     if (this.over) return;
     this.over = true;
+    if (win && this.objectives) { this.objectives.forEach(o => o.done = true); this._pushObjectives(); }
     const sub = win ? `You crushed the enemy in ${this._fmt(this.timeNow)}.` : `Your town center fell after ${this._fmt(this.timeNow)}.`;
     this.hud.showEnd(win, sub);
   }
@@ -861,6 +937,117 @@ export class Game {
     addEventListener('mousemove', e => this._onMouseMove(e));
     addEventListener('mouseup', e => this._onMouseUp(e));
     c.addEventListener('wheel', e => { e.preventDefault(); this.camDist = THREE.MathUtils.clamp(this.camDist * (1 + Math.sign(e.deltaY) * 0.1), 20, 110); this._updateCamera(); }, { passive: false });
+    this._initTouch();
+  }
+
+  // ---- touch controls (mobile parity) -------------------------------------
+  _initTouch() {
+    const c = this.canvas;
+    this.touch = { mode: 'none', sx: 0, sy: 0, lx: 0, ly: 0, t0: 0, moved: false, marquee: false, pinch: 0, ang: 0, mx: 0, my: 0 };
+    c.addEventListener('touchstart', e => this._touchStart(e), { passive: false });
+    c.addEventListener('touchmove', e => this._touchMove(e), { passive: false });
+    c.addEventListener('touchend', e => this._touchEnd(e), { passive: false });
+    c.addEventListener('touchcancel', e => this._touchEnd(e), { passive: false });
+
+    // marquee toggle button (only meaningful on touch)
+    if (matchMedia('(pointer: coarse)').matches) {
+      const btn = document.createElement('button');
+      btn.id = 'marquee-btn'; btn.title = 'Box-select mode';
+      btn.innerHTML = '⛶';
+      btn.onclick = () => { this.touch.marquee = !this.touch.marquee; btn.classList.toggle('on', this.touch.marquee); };
+      document.getElementById('app').appendChild(btn);
+      document.getElementById('app').classList.add('touch');
+    }
+  }
+
+  _touchStart(e) {
+    e.preventDefault();
+    const t = this.touch;
+    if (e.touches.length === 1) {
+      const p = e.touches[0];
+      t.mode = 'one'; t.sx = t.lx = p.clientX; t.sy = t.ly = p.clientY; t.t0 = performance.now(); t.moved = false;
+      if (t.marquee) { this._drag = { x0: p.clientX, y0: p.clientY, x: p.clientX, y: p.clientY, moved: false, add: false }; }
+      if (this.buildMode) { /* placement handled on tap end */ }
+    } else if (e.touches.length === 2) {
+      t.mode = 'two';
+      const [a, b] = e.touches;
+      t.pinch = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+      t.ang = Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
+      t.mx = (a.clientX + b.clientX) / 2; t.my = (a.clientY + b.clientY) / 2;
+      this._boxEl.style.display = 'none'; this._drag = null;
+    }
+  }
+
+  _touchMove(e) {
+    e.preventDefault();
+    const t = this.touch;
+    if (t.mode === 'one' && e.touches.length === 1) {
+      const p = e.touches[0];
+      const dx = p.clientX - t.lx, dy = p.clientY - t.ly;
+      if (Math.hypot(p.clientX - t.sx, p.clientY - t.sy) > 9) t.moved = true;
+      if (t.marquee && this._drag) {
+        this._drag.x = p.clientX; this._drag.y = p.clientY; this._drag.moved = true;
+        const x = Math.min(this._drag.x0, p.clientX), y = Math.min(this._drag.y0, p.clientY);
+        Object.assign(this._boxEl.style, { display: 'block', left: x + 'px', top: y + 'px', width: Math.abs(p.clientX - this._drag.x0) + 'px', height: Math.abs(p.clientY - this._drag.y0) + 'px' });
+      } else if (this.buildMode && this.ghost) {
+        const g = this._groundPoint({ clientX: p.clientX, clientY: p.clientY });
+        if (g) { this.ghost.position.set(g.x, this.terrain.heightAt(g.x, g.z), g.z); }
+      } else {
+        this._panScreen(dx, dy);
+      }
+      t.lx = p.clientX; t.ly = p.clientY;
+    } else if (t.mode === 'two' && e.touches.length === 2) {
+      const [a, b] = e.touches;
+      const dist = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+      const ang = Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
+      const mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2;
+      if (t.pinch > 0) this.camDist = THREE.MathUtils.clamp(this.camDist * (t.pinch / dist), 18, 115);
+      let da = ang - t.ang; while (da > Math.PI) da -= 6.283; while (da < -Math.PI) da += 6.283;
+      this.camYaw -= da;
+      this._panScreen(mx - t.mx, my - t.my);
+      t.pinch = dist; t.ang = ang; t.mx = mx; t.my = my;
+      this._updateCamera();
+    }
+  }
+
+  _touchEnd(e) {
+    e.preventDefault();
+    const t = this.touch;
+    if (t.mode === 'one') {
+      if (this.buildMode && !t.moved) { const g = this._groundPoint({ clientX: t.sx, clientY: t.sy }); if (g) this._placeBuilding(g.x, g.z); }
+      else if (t.marquee && this._drag && this._drag.moved) { this._boxEl.style.display = 'none'; this._boxSelect(this._drag.x0, this._drag.y0, this._drag.x, this._drag.y, false); this._drag = null; }
+      else if (!t.moved && (performance.now() - t.t0) < 400) { this._tapCommand(t.sx, t.sy); }
+    }
+    if (e.touches.length === 0) { t.mode = 'none'; this._boxEl.style.display = 'none'; }
+    else if (e.touches.length === 1) { t.mode = 'one'; const p = e.touches[0]; t.lx = p.clientX; t.ly = p.clientY; t.sx = p.clientX; t.sy = p.clientY; t.moved = true; }
+  }
+
+  _panScreen(dx, dy) {
+    const sp = this.camDist * 0.0016;
+    const fwd = _v.set(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
+    const right = _v2.set(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
+    this.camTarget.add(right.multiplyScalar(-dx * sp));
+    this.camTarget.add(fwd.multiplyScalar(dy * sp));
+    const lim = MAP.size / 2;
+    this.camTarget.x = THREE.MathUtils.clamp(this.camTarget.x, -lim, lim);
+    this.camTarget.z = THREE.MathUtils.clamp(this.camTarget.z, -lim, lim);
+    this._updateCamera();
+  }
+
+  // Smart tap: select own unit/building, or issue a command with current selection.
+  _tapCommand(x, y) {
+    const synth = { clientX: x, clientY: y };
+    const picked = this._pickEntity(synth);
+    if (picked && picked.kind === 'unit' && picked.entity.team === TEAM.PLAYER) { this._select([picked.entity], false); this._refreshHUD(); return; }
+    if (picked && picked.kind === 'building' && picked.entity.team === TEAM.PLAYER) { this._clearSelection(); this.selectedBuilding = picked.entity; this._refreshHUD(); return; }
+    if (this.selected.length) {
+      const g = this._groundPoint(synth);
+      let info = null;
+      if (picked && picked.kind === 'unit') info = { enemy: picked.entity.team !== TEAM.PLAYER, entity: picked.entity };
+      else if (picked && picked.kind === 'building' && picked.entity.team !== TEAM.PLAYER) info = { enemy: true, entity: picked.entity };
+      else if (picked && picked.kind === 'node') info = { node: picked.node };
+      this.commandRightClick(g || (info && info.entity ? info.entity.pos : info.node.pos), info);
+    } else { this._clearSelection(); this._refreshHUD(); }
   }
 
   _ndc(e) { this.mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); }
@@ -1136,5 +1323,7 @@ export class Game {
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(innerWidth, innerHeight);
+    if (this.particles) this.particles.resize();
+    if (this.composer) this.composer.setSize(innerWidth, innerHeight);
   }
 }

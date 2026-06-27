@@ -69,8 +69,8 @@ export class FogOfWar {
     for (let i = 0; i < this.n * this.n; i++) {
       let a;
       if (this.visible[i]) a = 0;
-      else if (this.explored[i]) a = 120;
-      else a = 210;
+      else if (this.explored[i]) a = 96;
+      else a = 198;
       // smooth toward target alpha for a soft reveal
       const cur = this.data[i * 4 + 3];
       this.data[i * 4 + 3] = cur + (a - cur) * 0.25;

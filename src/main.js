@@ -1,5 +1,7 @@
 import { Game } from './game/game.js';
 import { HUD } from './ui/hud.js';
+import { assets } from './engine/assets.js';
+window.assets = assets;
 
 const canvas = document.getElementById('game-canvas');
 
@@ -11,6 +13,7 @@ function start() {
     onAdvance: () => game.onAdvance(),
     onAction: n => game.onAction(n),
     onReplay: () => location.reload(),
+    onStart: () => game.onStart(),
   });
 
   window.game = game;
