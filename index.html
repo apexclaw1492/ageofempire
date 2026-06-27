@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Age of Empire — RTS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="./src/ui/hud.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- Loading -->
+      <div id="loading">
+        <div class="loading-inner">
+          <div class="loading-title">AGE&nbsp;OF&nbsp;EMPIRE</div>
+          <div class="loading-bar"><div class="loading-fill"></div></div>
+          <div class="loading-tip">Forging the world…</div>
+        </div>
+      </div>
+
+      <!-- Top resource bar -->
+      <div id="resource-bar" class="hud hidden">
+        <div class="res" id="res-wood"><span class="ico ico-wood"></span><span class="val">0</span></div>
+        <div class="res" id="res-food"><span class="ico ico-food"></span><span class="val">0</span></div>
+        <div class="res" id="res-gold"><span class="ico ico-gold"></span><span class="val">0</span></div>
+        <div class="res" id="res-pop"><span class="ico ico-pop"></span><span class="val">0/0</span></div>
+        <div class="res age" id="res-age"><span class="age-label">Dark Age</span></div>
+        <div class="res clock" id="res-clock">00:00</div>
+      </div>
+
+      <!-- Minimap -->
+      <div id="minimap-wrap" class="hud hidden">
+        <canvas id="minimap" width="220" height="220"></canvas>
+      </div>
+
+      <!-- Selection / command panel -->
+      <div id="command-panel" class="hud hidden">
+        <div id="sel-info">
+          <div id="sel-portrait"></div>
+          <div id="sel-meta">
+            <div id="sel-name">—</div>
+            <div id="sel-hpbar"><div id="sel-hpfill"></div></div>
+            <div id="sel-stats"></div>
+          </div>
+        </div>
+        <div id="action-grid"></div>
+      </div>
+
+      <!-- Toast / objective -->
+      <div id="toast" class="hidden"></div>
+      <div id="alerts"></div>
+
+      <!-- End screen -->
+      <div id="endscreen" class="hidden">
+        <div class="end-card">
+          <div id="end-title">Victory</div>
+          <div id="end-sub"></div>
+          <button id="end-replay">Play Again</button>
+        </div>
+      </div>
+
+      <!-- Help -->
+      <div id="help-hint" class="hud hidden">
+        <kbd>LMB</kbd> select · <kbd>drag</kbd> box · <kbd>RMB</kbd> move/gather/attack · <kbd>WASD</kbd> pan · <kbd>wheel</kbd> zoom · <kbd>MMB</kbd> rotate · <kbd>H</kbd> help
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
